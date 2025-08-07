@@ -16,12 +16,48 @@ import matplotlib.pyplot as plt
 # =========================
 # Configuration centralisée
 # =========================
+
+def generate_viral_filename():
+    """Génère un nom de fichier accrocheur et aléatoire pour la vidéo."""
+    prefixes = [
+        "🔥", "⚡", "💥", "🎯", "🚀", "💎", "👑", "🎪", "🎭", "🎨", "🎬", "🎤", "🎧", "🎮", "🏆", "🥇", "💫", "⭐", "🌟", "✨"
+    ]
+    
+    adjectives = [
+        "VIRAL", "EPIC", "LEGENDARY", "INSANE", "CRAZY", "AMAZING", "INCREDIBLE", "MIND_BLOWING", 
+        "HYPERTROPHIC", "MEGA", "ULTRA", "SUPER", "EXTREME", "WILD", "SICK", "LIT", "FIRE", 
+        "BOMBASTIC", "PHENOMENAL", "SPECTACULAR", "MAGNIFICENT", "ASTRONOMICAL", "COSMIC", 
+        "INTERGALACTIC", "QUANTUM", "NUCLEAR", "ATOMIC", "EXPLOSIVE", "DYNAMITE", "THUNDER"
+    ]
+    
+    nouns = [
+        "BATTLE", "SHOWDOWN", "CLASH", "DUEL", "WAR", "FIGHT", "COMBAT", "CONFLICT", "RIVALRY",
+        "CHALLENGE", "COMPETITION", "TOURNAMENT", "CHAMPIONSHIP", "MATCH", "GAME", "PLAYOFF",
+        "FINALS", "SEMIFINALS", "QUARTERFINALS", "ELIMINATION", "SURVIVAL", "DESTINY", "FATE",
+        "LEGACY", "DESTINY", "JOURNEY", "ADVENTURE", "QUEST", "MISSION", "EXPEDITION"
+    ]
+    
+    suffixes = [
+        "2024", "2025", "V2", "PRO", "MAX", "PLUS", "ULTIMATE", "DEFINITIVE", "FINAL", "REMASTERED",
+        "ENHANCED", "UPGRADED", "PREMIUM", "DELUXE", "COLLECTOR", "SPECIAL", "EXCLUSIVE", "LIMITED",
+        "RARE", "LEGENDARY", "MYTHICAL", "DIVINE", "CELESTIAL", "ETERNAL", "INFINITE", "ABSOLUTE"
+    ]
+    
+    prefix = random.choice(prefixes)
+    adjective = random.choice(adjectives)
+    noun = random.choice(nouns)
+    suffix = random.choice(suffixes)
+    
+    # Ajouter un timestamp pour garantir l'unicité
+    timestamp = f"{random.randint(1000, 9999)}"
+    
+    return f"{prefix}_{adjective}_{noun}_{suffix}_{timestamp}.mp4"
+
 class Config:
     WIDTH, HEIGHT = 720, 1280
     FPS = 50
     DURATION = 10
     TITLE_DURATION = 2
-    OUTPUT_FILE = "speed_vs_messi_viral.mp4"
     FRAMES_DIR = Path("frames_tmp")
     COLORS = {
         'background': (15, 15, 35),
@@ -43,6 +79,10 @@ class Config:
     FLASH_INTENSITY = 180
     SCORE_FLASH_DURATION = 12
     WIN_SCORE = 10
+    
+    @property
+    def OUTPUT_FILE(self):
+        return generate_viral_filename()
 
 CFG = Config()
 
@@ -57,39 +97,424 @@ def find_two_images():
 
 def download_wikimedia_image(query, filename):
     """Essaye plusieurs variantes de recherche sur Wikimedia Commons pour maximiser les chances de trouver une image."""
-    variants = [query, query + " portrait", query + " football", query + " face", query.split()[0]]
+    variants = [
+        query, 
+        query + " portrait", 
+        query + " face", 
+        query + " headshot",
+        query.split()[0] + " " + query.split()[-1] if len(query.split()) > 1 else query.split()[0],
+        query.split()[0]
+    ]
+    
     for v in variants:
         url = (
             "https://commons.wikimedia.org/w/api.php?"
             "action=query&format=json&prop=imageinfo&generator=search&gsrsearch="
             + requests.utils.quote(v) +
-            "&gsrlimit=1&iiprop=url"
+            "&gsrlimit=3&iiprop=url|size|mime"
         )
         try:
+            print(f"    🔍 Recherche Wikimedia: {v}")
             r = requests.get(url, timeout=10)
             data = r.json()
             pages = data.get('query', {}).get('pages', {})
+            
             for page in pages.values():
                 if 'imageinfo' in page:
-                    img_url = page['imageinfo'][0]['url']
-                    img_data = requests.get(img_url, timeout=10).content
-                    with open(filename, 'wb') as f:
-                        f.write(img_data)
-                    return True
+                    img_info = page['imageinfo'][0]
+                    img_url = img_info['url']
+                    
+                    # Vérifier que c'est une image de taille raisonnable
+                    if 'size' in img_info and img_info['size'] > 10000:  # Au moins 10KB
+                        print(f"    📥 Téléchargement depuis: {img_url}")
+                        img_data = requests.get(img_url, timeout=10).content
+                        
+                        # Convertir en PNG avec PIL pour s'assurer du bon format
+                        from PIL import Image
+                        import io
+                        img = Image.open(io.BytesIO(img_data)).convert('RGBA')
+                        img = img.resize((400, 400), Image.Resampling.LANCZOS)
+                        img.save(filename, 'PNG')
+                        print(f"    ✅ Image sauvegardée: {filename}")
+                        return True
         except Exception as e:
+            print(f"    ❌ Erreur Wikimedia {v}: {e}")
             continue
     return False
 
 def download_unsplash_image(query, filename):
     """Télécharge une image portrait depuis Unsplash (requête simple, pas besoin de clé)."""
     try:
-        url = f"https://source.unsplash.com/400x400/?{requests.utils.quote(query + ',portrait,face') }"
-        img_data = requests.get(url, timeout=10).content
-        with open(filename, 'wb') as f:
-            f.write(img_data)
+        print(f"    🔍 Recherche Unsplash: {query}")
+        
+        # Utiliser la nouvelle approche robuste
+        if download_image_robust(query, filename):
+            return True
+        
+        # Si la recherche robuste échoue, essayer l'ancienne méthode
+        url = f"https://source.unsplash.com/400x400/?{requests.utils.quote(query + ',portrait,face')}"
+        print(f"    📥 Téléchargement depuis: {url}")
+        
+        # Ajouter des headers pour simuler un navigateur
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, timeout=10, headers=headers)
+        
+        # Vérifier si la réponse contient une image
+        if response.status_code == 200 and response.headers.get('content-type', '').startswith('image/'):
+            img_data = response.content
+            
+            # Convertir en PNG avec PIL pour s'assurer du bon format
+            from PIL import Image
+            import io
+            
+            try:
+                img = Image.open(io.BytesIO(img_data))
+                # Vérifier si c'est une image valide
+                img.verify()
+                img.close()
+                
+                # Recharger l'image pour la traiter
+                img = Image.open(io.BytesIO(img_data)).convert('RGBA')
+                img = img.resize((400, 400), Image.Resampling.LANCZOS)
+                img.save(filename, 'PNG')
+                print(f"    ✅ Image sauvegardée: {filename}")
+                return True
+            except Exception as e:
+                print(f"    ⚠️  Format d'image non reconnu: {e}")
+                return False
+        else:
+            print(f"    ⚠️  Réponse non-image reçue (status: {response.status_code}, content-type: {response.headers.get('content-type')})")
+            return False
+            
+    except Exception as e:
+        print(f"    ❌ Erreur Unsplash: {e}")
+        return False
+
+def download_pixabay_image(query, filename):
+    """Télécharge une image depuis Pixabay (sans clé API, utilisation directe)."""
+    try:
+        print(f"    🔍 Recherche Pixabay: {query}")
+        
+        # Utiliser la nouvelle approche robuste
+        if download_image_robust(query, filename):
+            return True
+        
+        # Si la recherche robuste échoue, essayer l'ancienne méthode
+        try:
+            print(f"    📥 Tentative de téléchargement depuis Pixabay...")
+            
+            # Utiliser une approche alternative - essayer de télécharger depuis Unsplash
+            # car Pixabay nécessite une clé API pour l'accès programmatique
+            unsplash_url = f"https://source.unsplash.com/400x400/?{requests.utils.quote(query + ',portrait,face')}"
+            print(f"    📥 Téléchargement depuis Unsplash (alternative Pixabay): {unsplash_url}")
+            
+            # Ajouter des headers pour simuler un navigateur
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            response = requests.get(unsplash_url, timeout=10, headers=headers)
+            
+            # Vérifier si la réponse contient une image
+            if response.status_code == 200 and response.headers.get('content-type', '').startswith('image/'):
+                img_data = response.content
+                
+                # Convertir en PNG avec PIL pour s'assurer du bon format
+                from PIL import Image
+                import io
+                
+                try:
+                    img = Image.open(io.BytesIO(img_data))
+                    # Vérifier si c'est une image valide
+                    img.verify()
+                    img.close()
+                    
+                    # Recharger l'image pour la traiter
+                    img = Image.open(io.BytesIO(img_data)).convert('RGBA')
+                    img = img.resize((400, 400), Image.Resampling.LANCZOS)
+                    img.save(filename, 'PNG')
+                    print(f"    ✅ Image téléchargée via alternative Pixabay: {filename}")
+                    return True
+                except Exception as e:
+                    print(f"    ⚠️  Format d'image non reconnu: {e}")
+            else:
+                print(f"    ⚠️  Réponse non-image reçue (status: {response.status_code}, content-type: {response.headers.get('content-type')})")
+                
+        except Exception as e:
+            print(f"    ⚠️  Échec du téléchargement Pixabay: {e}")
+        
+        # Si le téléchargement échoue, créer un avatar de fallback plus réaliste
+        print(f"    🎨 Création d'un avatar de fallback pour Pixabay...")
+        from PIL import Image, ImageDraw, ImageFont
+        img = Image.new('RGBA', (400, 400), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        
+        # Créer un avatar plus réaliste au lieu d'un simple cercle
+        # Couleur de peau réaliste
+        skin_colors = [
+            (255, 224, 189), (255, 205, 148), (234, 192, 134), (255, 173, 96),
+            (234, 153, 153), (255, 198, 140), (255, 218, 185), (255, 228, 196)
+        ]
+        skin_color = random.choice(skin_colors)
+        
+        # Dessiner la tête (ovale)
+        head_width, head_height = 200, 250
+        head_x = (400 - head_width) // 2
+        head_y = (400 - head_height) // 2
+        draw.ellipse([head_x, head_y, head_x + head_width, head_y + head_height], fill=skin_color + (255,))
+        
+        # Dessiner les yeux
+        eye_color = (random.randint(50, 150), random.randint(50, 150), random.randint(50, 150))
+        eye_size = 25
+        left_eye = (head_x + 60, head_y + 80)
+        right_eye = (head_x + 140, head_y + 80)
+        draw.ellipse([left_eye[0]-eye_size, left_eye[1]-eye_size, left_eye[0]+eye_size, left_eye[1]+eye_size], 
+                     fill=eye_color + (255,))
+        draw.ellipse([right_eye[0]-eye_size, right_eye[1]-eye_size, right_eye[0]+eye_size, right_eye[1]+eye_size], 
+                     fill=eye_color + (255,))
+        
+        # Pupilles
+        draw.ellipse([left_eye[0]-8, left_eye[1]-8, left_eye[0]+8, left_eye[1]+8], fill=(0, 0, 0, 255))
+        draw.ellipse([right_eye[0]-8, right_eye[1]-8, right_eye[0]+8, right_eye[1]+8], fill=(0, 0, 0, 255))
+        
+        # Nez
+        nose_color = tuple(int(c * 0.8) for c in skin_color) + (255,)
+        draw.ellipse([head_x + 85, head_y + 120, head_x + 115, head_y + 150], fill=nose_color)
+        
+        # Bouche
+        mouth_color = (220, 20, 60, 255)
+        draw.ellipse([head_x + 70, head_y + 160, head_x + 130, head_y + 180], fill=mouth_color)
+        
+        # Ajouter le nom en bas
+        try:
+            font = ImageFont.truetype("arial.ttf", 30)
+        except:
+            font = ImageFont.load_default()
+        
+        text_color = (255, 255, 255, 255)
+        text_bbox = draw.textbbox((0, 0), query.split()[0], font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        x = (400 - text_width) // 2
+        y = 350
+        draw.text((x, y), query.split()[0], fill=text_color, font=font)
+        
+        img.save(filename, 'PNG')
+        print(f"    ✅ Avatar Pixabay créé: {filename}")
         return True
     except Exception as e:
+        print(f"    ❌ Erreur Pixabay: {e}")
         return False
+
+def download_pexels_image(query, filename):
+    """Télécharge une image depuis Pexels (sans clé API, création d'avatar)."""
+    try:
+        print(f"    🔍 Recherche Pexels: {query}")
+        
+        # Utiliser la nouvelle approche robuste
+        if download_image_robust(query, filename):
+            return True
+        
+        # Si la recherche robuste échoue, essayer l'ancienne méthode
+        try:
+            print(f"    📥 Tentative de téléchargement depuis Pexels...")
+            # Utiliser Unsplash comme alternative pour Pexels
+            unsplash_url = f"https://source.unsplash.com/400x400/?{requests.utils.quote(query + ',portrait,face')}"
+            print(f"    📥 Téléchargement depuis Unsplash (alternative Pexels): {unsplash_url}")
+            
+            # Ajouter des headers pour simuler un navigateur
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            response = requests.get(unsplash_url, timeout=10, headers=headers)
+            
+            # Vérifier si la réponse contient une image
+            if response.status_code == 200 and response.headers.get('content-type', '').startswith('image/'):
+                img_data = response.content
+                
+                # Convertir en PNG avec PIL pour s'assurer du bon format
+                from PIL import Image
+                import io
+                
+                try:
+                    img = Image.open(io.BytesIO(img_data))
+                    # Vérifier si c'est une image valide
+                    img.verify()
+                    img.close()
+                    
+                    # Recharger l'image pour la traiter
+                    img = Image.open(io.BytesIO(img_data)).convert('RGBA')
+                    img = img.resize((400, 400), Image.Resampling.LANCZOS)
+                    img.save(filename, 'PNG')
+                    print(f"    ✅ Image téléchargée via alternative Pexels: {filename}")
+                    return True
+                except Exception as e:
+                    print(f"    ⚠️  Format d'image non reconnu: {e}")
+            else:
+                print(f"    ⚠️  Réponse non-image reçue (status: {response.status_code}, content-type: {response.headers.get('content-type')})")
+                
+        except Exception as e:
+            print(f"    ⚠️  Échec du téléchargement Pexels: {e}")
+        
+        # Si le téléchargement échoue, créer un avatar de fallback plus réaliste
+        print(f"    🎨 Création d'un avatar de fallback pour Pexels...")
+        from PIL import Image, ImageDraw, ImageFont
+        img = Image.new('RGBA', (400, 400), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        
+        # Créer un avatar plus réaliste au lieu d'un simple cercle
+        # Couleur de peau réaliste
+        skin_colors = [
+            (255, 224, 189), (255, 205, 148), (234, 192, 134), (255, 173, 96),
+            (234, 153, 153), (255, 198, 140), (255, 218, 185), (255, 228, 196)
+        ]
+        skin_color = random.choice(skin_colors)
+        
+        # Dessiner la tête (ovale)
+        head_width, head_height = 200, 250
+        head_x = (400 - head_width) // 2
+        head_y = (400 - head_height) // 2
+        draw.ellipse([head_x, head_y, head_x + head_width, head_y + head_height], fill=skin_color + (255,))
+        
+        # Dessiner les yeux
+        eye_color = (random.randint(50, 150), random.randint(50, 150), random.randint(50, 150))
+        eye_size = 25
+        left_eye = (head_x + 60, head_y + 80)
+        right_eye = (head_x + 140, head_y + 80)
+        draw.ellipse([left_eye[0]-eye_size, left_eye[1]-eye_size, left_eye[0]+eye_size, left_eye[1]+eye_size], 
+                     fill=eye_color + (255,))
+        draw.ellipse([right_eye[0]-eye_size, right_eye[1]-eye_size, right_eye[0]+eye_size, right_eye[1]+eye_size], 
+                     fill=eye_color + (255,))
+        
+        # Pupilles
+        draw.ellipse([left_eye[0]-8, left_eye[1]-8, left_eye[0]+8, left_eye[1]+8], fill=(0, 0, 0, 255))
+        draw.ellipse([right_eye[0]-8, right_eye[1]-8, right_eye[0]+8, right_eye[1]+8], fill=(0, 0, 0, 255))
+        
+        # Nez
+        nose_color = tuple(int(c * 0.8) for c in skin_color) + (255,)
+        draw.ellipse([head_x + 85, head_y + 120, head_x + 115, head_y + 150], fill=nose_color)
+        
+        # Bouche
+        mouth_color = (220, 20, 60, 255)
+        draw.ellipse([head_x + 70, head_y + 160, head_x + 130, head_y + 180], fill=mouth_color)
+        
+        # Ajouter le nom en bas
+        try:
+            font = ImageFont.truetype("arial.ttf", 30)
+        except:
+            font = ImageFont.load_default()
+        
+        text_color = (255, 255, 255, 255)
+        text_bbox = draw.textbbox((0, 0), query.split()[0], font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        x = (400 - text_width) // 2
+        y = 350
+        draw.text((x, y), query.split()[0], fill=text_color, font=font)
+        
+        img.save(filename, 'PNG')
+        print(f"    ✅ Avatar Pexels créé: {filename}")
+        return True
+    except Exception as e:
+        print(f"    ❌ Erreur Pexels: {e}")
+        return False
+
+def create_realistic_avatar(name, filename, is_male=True):
+    """Crée un avatar réaliste avec un visage généré."""
+    from PIL import Image, ImageDraw, ImageFont
+    import random
+    
+    # Couleurs de peau réalistes
+    skin_colors = [
+        (255, 224, 189), (255, 205, 148), (234, 192, 134), (255, 173, 96),
+        (234, 153, 153), (255, 198, 140), (255, 218, 185), (255, 228, 196),
+        (255, 235, 205), (255, 245, 238), (245, 245, 220), (255, 250, 240)
+    ]
+    
+    # Créer une image 400x400 avec transparence
+    img = Image.new('RGBA', (400, 400), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    
+    # Couleur de peau aléatoire
+    skin_color = random.choice(skin_colors)
+    
+    # Dessiner la tête (ovale)
+    head_width, head_height = 200, 250
+    head_x = (400 - head_width) // 2
+    head_y = (400 - head_height) // 2
+    draw.ellipse([head_x, head_y, head_x + head_width, head_y + head_height], fill=skin_color)
+    
+    # Dessiner les yeux
+    eye_color = (random.randint(50, 150), random.randint(50, 150), random.randint(50, 150))
+    eye_size = 25
+    left_eye_x = head_x + 60
+    right_eye_x = head_x + 140
+    eye_y = head_y + 100
+    draw.ellipse([left_eye_x, eye_y, left_eye_x + eye_size, eye_y + eye_size], fill=eye_color)
+    draw.ellipse([right_eye_x, eye_y, right_eye_x + eye_size, eye_y + eye_size], fill=eye_color)
+    
+    # Dessiner le nez
+    nose_x = head_x + head_width // 2
+    nose_y = eye_y + 40
+    draw.ellipse([nose_x - 10, nose_y, nose_x + 10, nose_y + 20], fill=skin_color)
+    
+    # Dessiner la bouche
+    mouth_x = nose_x
+    mouth_y = nose_y + 40
+    draw.arc([mouth_x - 20, mouth_y, mouth_x + 20, mouth_y + 15], 0, 180, fill=(139, 69, 19), width=3)
+    
+    # Dessiner les cheveux
+    hair_colors = [
+        (139, 69, 19), (160, 82, 45), (210, 105, 30), (244, 164, 96),
+        (255, 215, 0), (255, 255, 0), (255, 165, 0), (255, 0, 0),
+        (128, 0, 128), (0, 0, 255), (0, 255, 0), (255, 192, 203)
+    ]
+    hair_color = random.choice(hair_colors)
+    
+    # Style de cheveux selon le genre
+    if is_male:
+        # Cheveux courts pour les hommes
+        hair_points = [
+            (head_x - 20, head_y - 20),
+            (head_x + head_width + 20, head_y - 20),
+            (head_x + head_width + 30, head_y + 50),
+            (head_x - 30, head_y + 50)
+        ]
+    else:
+        # Cheveux longs pour les femmes
+        hair_points = [
+            (head_x - 30, head_y - 40),
+            (head_x + head_width + 30, head_y - 40),
+            (head_x + head_width + 40, head_y + 100),
+            (head_x - 40, head_y + 100)
+        ]
+    
+    draw.polygon(hair_points, fill=hair_color)
+    
+    # Ajouter le nom
+    try:
+        font = ImageFont.truetype("arial.ttf", 40)
+    except:
+        font = ImageFont.load_default()
+    
+    text = name[0].upper()
+    text_bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_x = (400 - text_width) // 2
+    text_y = head_y + head_height + 20
+    
+    # Ombre du texte
+    draw.text((text_x + 2, text_y + 2), text, fill=(0, 0, 0, 128), font=font)
+    draw.text((text_x, text_y), text, fill=(255, 255, 255, 255), font=font)
+    
+    # Sauvegarder en PNG avec transparence
+    img.save(filename, 'PNG')
+    print(f"🎨 Avatar réaliste créé pour {name}: {filename}")
+    return True
 
 # --- LISTES SÉPARÉES HOMMES/FEMMES ---
 HOMMES = [
@@ -99,46 +524,82 @@ FEMMES = [
     "Serena Williams", "Naomi Osaka", "Pokimane", "Amouranth", "Valkyrae", "Taylor Swift", "Beyonce", "Rihanna", "Billie Eilish", "Doja Cat", "Dua Lipa", "Olivia Rodrigo", "Zendaya", "Scarlett Johansson", "Margot Robbie", "Jennifer Lawrence", "Anne Hathaway", "Greta Thunberg", "Amber Heard", "Wonder Woman", "Nezuko Kamado", "Charli DAmelio", "Addison Rae", "Bella Poarch", "Khaby Lame", "Loren Gray", "Avani Gregg", "Dixie DAmelio", "Nikkie Tutorials", "James Charles", "Shakira", "Adele", "Ariana Grande", "Cardi B", "Nicki Minaj", "Lisa Blackpink", "Jennie Blackpink", "Rose Blackpink", "Jisoo Blackpink", "Anitta", "Oprah Winfrey", "Michelle Obama", "Meghan Markle", "Kim Kardashian", "Kylie Jenner", "Kendall Jenner", "Gigi Hadid", "Bella Hadid", "Paris Hilton", "Selena Gomez", "Princess Peach", "Zelda Princess", "Samus Aran", "Jada Pinkett Smith", "Gal Gadot", "Millie Bobby Brown", "Sadie Sink", "Courteney Cox", "Lisa Kudrow", "Matt LeBlanc", "Naomi Scott", "Emma Watson", "Emma Stone", "Florence Pugh", "Natalie Portman", "Jessica Alba", "Eva Mendes", "Mila Kunis", "Kate Winslet", "Angelina Jolie", "Reese Witherspoon", "Julia Roberts", "Sandra Bullock", "Anne Curtis", "Priyanka Chopra", "Deepika Padukone", "Alia Bhatt", "Kriti Sanon", "Anushka Sharma", "Halle Berry", "Monica Bellucci", "Salma Hayek", "Penelope Cruz", "Cameron Diaz", "Kristen Stewart", "Kirsten Dunst", "Dakota Johnson", "Lily Collins", "Sofia Vergara", "Megan Fox", "Halsey", "Katy Perry", "Ellie Goulding", "Charli XCX", "Camila Cabello", "Lauren Jauregui", "Normani", "Becky G", "Tini Stoessel", "Madison Beer", "Hailee Steinfeld", "Lana Del Rey", "Kacey Musgraves", "Sabrina Carpenter"
 ]
 
+# --- LISTE COMBINÉE POUR LA SÉLECTION ALÉATOIRE ---
+PERSONNALITIES = HOMMES + FEMMES
+
 # --- DEMANDE DES NOMS ET TÉLÉCHARGEMENT AUTOMATIQUE ---
 def get_or_download_images():
     img1, img2 = 'img1.png', 'img2.png'
     tried = set()
     for attempt in range(15):
-        n1, n2 = random.sample(PERSONNALITIES, 2)
+        # Sélectionner un homme et une femme au lieu de deux personnes aléatoires
+        n1 = random.choice(HOMMES)
+        n2 = random.choice(FEMMES)
         if (n1, n2) in tried or (n2, n1) in tried:
             continue
         tried.add((n1, n2))
-        ok1 = download_wikimedia_image(n1, img1)
+        
+        print(f"🔍 Tentative {attempt + 1}/15: Recherche d'images pour {n1} et {n2}")
+        
+        # Essayer plusieurs sources pour l'homme
+        ok1 = False
         if not ok1:
+            print(f"  📥 Téléchargement Wikimedia pour {n1}...")
+            ok1 = download_wikimedia_image(n1, img1)
+        if not ok1:
+            print(f"  📥 Téléchargement Unsplash pour {n1}...")
             ok1 = download_unsplash_image(n1, img1)
-        ok2 = download_wikimedia_image(n2, img2)
-        if not ok2:
-            ok2 = download_unsplash_image(n2, img2)
-        # Si toujours rien, fallback avatar coloré
         if not ok1:
-            from PIL import Image, ImageDraw
-            im = Image.new('RGBA', (400,400), (random.randint(100,255),random.randint(100,255),random.randint(100,255),255))
-            d = ImageDraw.Draw(im)
-            d.text((100,180), n1[0], fill=(255,255,255,255))
-            im.save(img1)
-            ok1 = True
+            print(f"  📥 Téléchargement Pixabay pour {n1}...")
+            ok1 = download_pixabay_image(n1, img1)
+        if not ok1:
+            print(f"  📥 Téléchargement Pexels pour {n1}...")
+            ok1 = download_pexels_image(n1, img1)
+        
+        # Essayer plusieurs sources pour la femme
+        ok2 = False
         if not ok2:
-            from PIL import Image, ImageDraw
-            im = Image.new('RGBA', (400,400), (random.randint(100,255),random.randint(100,255),random.randint(100,255),255))
-            d = ImageDraw.Draw(im)
-            d.text((100,180), n2[0], fill=(255,255,255,255))
-            im.save(img2)
-            ok2 = True
+            print(f"  📥 Téléchargement Wikimedia pour {n2}...")
+            ok2 = download_wikimedia_image(n2, img2)
+        if not ok2:
+            print(f"  📥 Téléchargement Unsplash pour {n2}...")
+            ok2 = download_unsplash_image(n2, img2)
+        if not ok2:
+            print(f"  📥 Téléchargement Pixabay pour {n2}...")
+            ok2 = download_pixabay_image(n2, img2)
+        if not ok2:
+            print(f"  📥 Téléchargement Pexels pour {n2}...")
+            ok2 = download_pexels_image(n2, img2)
+        
+        # Si toujours rien, créer des avatars réalistes
+        if not ok1:
+            print(f"  🎨 Création d'un avatar réaliste pour {n1}...")
+            ok1 = create_realistic_avatar(n1, img1, is_male=True)
+        if not ok2:
+            print(f"  🎨 Création d'un avatar réaliste pour {n2}...")
+            ok2 = create_realistic_avatar(n2, img2, is_male=False)
+        
         if ok1 and ok2:
+            print(f"✅ Images trouvées/créées pour {n1} et {n2}")
             return img1, img2, n1.upper(), n2.upper()
         else:
-            print(f"⚠️  Impossible de trouver des images pour {n1} ou {n2}, nouvelle tentative...")
-    raise RuntimeError("Aucune paire de personnalités avec images trouvée après 15 essais. Modifiez la liste ou vérifiez la connexion internet.")
+            print(f"⚠️  Impossible de trouver/créer des images pour {n1} ou {n2}, nouvelle tentative...")
+    
+    # Dernière tentative avec des avatars réalistes
+    print("🔄 Dernière tentative avec des avatars réalistes...")
+    n1 = random.choice(HOMMES)
+    n2 = random.choice(FEMMES)
+    create_realistic_avatar(n1, img1, is_male=True)
+    create_realistic_avatar(n2, img2, is_male=False)
+    return img1, img2, n1.upper(), n2.upper()
 
 # --- UTILISATION DES IMAGES AUTOMATIQUES ---
 IMG1_PATH, IMG2_PATH, IMG1_NAME, IMG2_NAME = get_or_download_images()
 
+# Initialiser pygame correctement
 pygame.init()
+# Créer une surface virtuelle pour éviter l'erreur "No video mode has been set"
+pygame.display.set_mode((1, 1), pygame.NOFRAME)
 screen = pygame.Surface((CFG.WIDTH, CFG.HEIGHT))
 clock = pygame.time.Clock()
 FONT_LARGE  = pygame.font.SysFont(None, 120)
@@ -146,12 +607,26 @@ FONT_MEDIUM = pygame.font.SysFont(None, 80)
 FONT_SMALL  = pygame.font.SysFont(None, 60)
 
 def load_or_fallback(name, color):
+    """Charge une image avec gestion robuste des erreurs et conversion automatique."""
     try:
+        # Essayer de charger l'image avec pygame
         img = pygame.image.load(name).convert_alpha()
-    except:
+        print(f"✅ Image chargée avec succès: {name}")
+        return pygame.transform.smoothscale(img, (80, 80))
+    except Exception as e:
+        print(f"⚠️  Erreur lors du chargement de {name}: {e}")
+        # Créer un avatar de fallback
         img = pygame.Surface((80, 80), pygame.SRCALPHA)
         img.fill(color)
-    return pygame.transform.smoothscale(img, (80, 80))
+        # Ajouter la première lettre du nom
+        try:
+            font = pygame.font.SysFont(None, 40)
+            text = font.render(name.split('/')[-1].split('.')[0][0].upper(), True, (255, 255, 255))
+            text_rect = text.get_rect(center=(40, 40))
+            img.blit(text, text_rect)
+        except:
+            pass
+        return img
 
 img1 = load_or_fallback(IMG1_PATH, CFG.COLORS['p1'])
 img2 = load_or_fallback(IMG2_PATH, CFG.COLORS['p2'])
@@ -443,39 +918,72 @@ def render_video():
     game = Game(CFG)
     total_frames = int(CFG.DURATION * CFG.FPS)
     print("🎮 Génération en cours...")
+    
+    # Utiliser OpenCV au lieu de MoviePy
+    output_filename = CFG.OUTPUT_FILE
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_filename, fourcc, CFG.FPS, (CFG.WIDTH, CFG.HEIGHT))
+    
     for i in range(total_frames):
         game.update()
         game.render_frame(screen)
+        
+        # Convertir pygame surface en array OpenCV
         frame_array = pygame.surfarray.array3d(screen)
         frame_array = np.transpose(frame_array, (1, 0, 2))
-        frame_path = CFG.FRAMES_DIR / f"frame_{i:05d}.png"
-        Image.fromarray(frame_array).save(frame_path, "PNG")
+        frame_array = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
+        
+        out.write(frame_array)
+        
         if i % max(1, total_frames // 10) == 0:
             pct = (i / total_frames) * 100
             print(f"📊 Progression: {pct:.0f}%")
-    print("🎬 Assemblage de la vidéo...")
-    frame_files = [str(p) for p in sorted(CFG.FRAMES_DIR.iterdir()) if p.suffix.lower() == ".png"]
-    clip = mpy.ImageSequenceClip(frame_files, fps=CFG.FPS)
-    audio = AudioClip(lambda t: music_frame(t), duration=CFG.DURATION, fps=44100)
-    clip = clip.set_audio(audio)
-    clip.write_videofile(
-        CFG.OUTPUT_FILE,
-        codec="libx264",
-        audio_codec="aac",
-        fps=CFG.FPS,
-        threads=4
-    )
+    
+    out.release()
+    
     try:
         shutil.rmtree(CFG.FRAMES_DIR)
     except Exception:
         pass
-    print(f"✅ Vidéo créée : {CFG.OUTPUT_FILE}")
+    
+    print(f"✅ Vidéo créée : {output_filename}")
     print("🚀 Prêt pour TikTok / Shorts / Reels.")
 
 def blend_images(img_path1, img_path2, out_path):
-    from PIL import Image
-    im1 = Image.open(img_path1).convert('RGBA').resize((400,400))
-    im2 = Image.open(img_path2).convert('RGBA').resize((400,400))
+    from PIL import Image, ImageDraw
+    
+    # Fonction pour créer un avatar de fallback
+    def create_fallback_avatar(name, color):
+        im = Image.new('RGBA', (400, 400), color)
+        d = ImageDraw.Draw(im)
+        # Dessiner un cercle pour la tête
+        d.ellipse([50, 50, 350, 350], fill=(255, 255, 255, 100))
+        # Ajouter la première lettre du nom
+        try:
+            # Essayer d'utiliser une police plus grande
+            font_size = 120
+            d.text((200, 180), name[0].upper(), fill=(255, 255, 255, 255), anchor="mm")
+        except:
+            # Fallback si la police échoue
+            d.text((150, 150), name[0].upper(), fill=(255, 255, 255, 255))
+        return im
+    
+    # Charger ou créer les images
+    try:
+        im1 = Image.open(img_path1).convert('RGBA').resize((400, 400))
+    except:
+        # Créer un avatar de fallback pour l'homme
+        color1 = (random.randint(100, 200), random.randint(50, 150), random.randint(50, 150), 255)
+        im1 = create_fallback_avatar("H", color1)
+    
+    try:
+        im2 = Image.open(img_path2).convert('RGBA').resize((400, 400))
+    except:
+        # Créer un avatar de fallback pour la femme
+        color2 = (random.randint(150, 255), random.randint(100, 200), random.randint(150, 255), 255)
+        im2 = create_fallback_avatar("F", color2)
+    
+    # Fusionner les images
     blended = Image.blend(im1, im2, alpha=0.5)
     blended.save(out_path)
     return blended
@@ -544,100 +1052,350 @@ def cartoon_fusion_video():
     for idx, (n1, n2) in enumerate(couples, 1):
         print(f"\n🎬 Cartoon couple {idx}: {n1} + {n2}")
         img1, img2 = f"parent1_{idx}.png", f"parent2_{idx}.png"
-        ok1 = download_wikimedia_image(n1, img1) or download_unsplash_image(n1, img1)
-        ok2 = download_wikimedia_image(n2, img2) or download_unsplash_image(n2, img2)
+        
+        # Télécharger ou créer des avatars réalistes
+        print(f"  📥 Téléchargement des images pour {n1} et {n2}...")
+        
+        ok1 = False
         if not ok1:
-            from PIL import Image, ImageDraw
-            im = Image.new('RGBA', (400,400), (random.randint(100,255),random.randint(100,255),random.randint(100,255),255))
-            d = ImageDraw.Draw(im)
-            d.text((100,180), n1[0], fill=(255,255,255,255))
-            im.save(img1)
+            print(f"  🔍 Essai Wikimedia pour {n1}...")
+            ok1 = download_wikimedia_image(n1, img1)
+        if not ok1:
+            print(f"  🔍 Essai Unsplash pour {n1}...")
+            ok1 = download_unsplash_image(n1, img1)
+        if not ok1:
+            print(f"  🔍 Essai Pixabay pour {n1}...")
+            ok1 = download_pixabay_image(n1, img1)
+        if not ok1:
+            print(f"  🔍 Essai Pexels pour {n1}...")
+            ok1 = download_pexels_image(n1, img1)
+        if not ok1:
+            print(f"  🎨 Création d'un avatar réaliste pour {n1}...")
+            ok1 = create_realistic_avatar(n1, img1, is_male=True)
+        
+        ok2 = False
         if not ok2:
-            from PIL import Image, ImageDraw
-            im = Image.new('RGBA', (400,400), (random.randint(100,255),random.randint(100,255),random.randint(100,255),255))
-            d = ImageDraw.Draw(im)
-            d.text((100,180), n2[0], fill=(255,255,255,255))
-            im.save(img2)
+            print(f"  🔍 Essai Wikimedia pour {n2}...")
+            ok2 = download_wikimedia_image(n2, img2)
+        if not ok2:
+            print(f"  🔍 Essai Unsplash pour {n2}...")
+            ok2 = download_unsplash_image(n2, img2)
+        if not ok2:
+            print(f"  🔍 Essai Pixabay pour {n2}...")
+            ok2 = download_pixabay_image(n2, img2)
+        if not ok2:
+            print(f"  🔍 Essai Pexels pour {n2}...")
+            ok2 = download_pexels_image(n2, img2)
+        if not ok2:
+            print(f"  🎨 Création d'un avatar réaliste pour {n2}...")
+            ok2 = create_realistic_avatar(n2, img2, is_male=False)
+        
         # Génère le bébé fusionné
         child_path = f"child_{idx}.png"
         blend_images(img1, img2, child_path)
         baby_imgs.append((child_path, n1, n2))
+        
         # Animation cartoon (frames)
         frames = []
-        avatar1 = cv2.cvtColor(cv2.imread(img1, cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGBA)
-        avatar2 = cv2.cvtColor(cv2.imread(img2, cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGBA)
-        baby = cv2.cvtColor(cv2.imread(child_path, cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGBA)
+        try:
+            # Charger les images avec PIL puis convertir en numpy array
+            from PIL import Image
+            import numpy as np
+            
+            # Charger l'avatar 1
+            pil_img1 = Image.open(img1).convert('RGBA')
+            pil_img1 = pil_img1.resize((400, 400), Image.Resampling.LANCZOS)
+            avatar1 = np.array(pil_img1)
+            print(f"  ✅ Avatar 1 chargé: {avatar1.shape}")
+        except Exception as e:
+            print(f"  ⚠️  Erreur lors du chargement de {img1}: {e}")
+            # Créer un avatar de fallback pour l'homme
+            avatar1 = np.zeros((400, 400, 4), dtype=np.uint8)
+            color1 = (random.randint(100, 200), random.randint(50, 150), random.randint(50, 150), 255)
+            cv2.circle(avatar1, (200, 200), 150, color1, -1)
+            cv2.putText(avatar1, n1[0].upper(), (150, 220), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 255, 255, 255), 5)
+        
+        try:
+            # Charger l'avatar 2
+            pil_img2 = Image.open(img2).convert('RGBA')
+            pil_img2 = pil_img2.resize((400, 400), Image.Resampling.LANCZOS)
+            avatar2 = np.array(pil_img2)
+            print(f"  ✅ Avatar 2 chargé: {avatar2.shape}")
+        except Exception as e:
+            print(f"  ⚠️  Erreur lors du chargement de {img2}: {e}")
+            # Créer un avatar de fallback pour la femme
+            avatar2 = np.zeros((400, 400, 4), dtype=np.uint8)
+            color2 = (random.randint(150, 255), random.randint(100, 200), random.randint(150, 255), 255)
+            cv2.circle(avatar2, (200, 200), 150, color2, -1)
+            cv2.putText(avatar2, n2[0].upper(), (150, 220), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 255, 255, 255), 5)
+        
+        try:
+            # Charger le bébé
+            pil_baby = Image.open(child_path).convert('RGBA')
+            pil_baby = pil_baby.resize((400, 400), Image.Resampling.LANCZOS)
+            baby = np.array(pil_baby)
+            print(f"  ✅ Bébé chargé: {baby.shape}")
+        except Exception as e:
+            print(f"  ⚠️  Erreur lors du chargement de {child_path}: {e}")
+            # Créer un bébé de fallback
+            baby = np.zeros((400, 400, 4), dtype=np.uint8)
+            color_baby = (random.randint(150, 255), random.randint(150, 255), random.randint(150, 255), 255)
+            cv2.circle(baby, (200, 200), 150, color_baby, -1)
+            cv2.putText(baby, "B", (150, 220), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 255, 255, 255), 5)
+        
         for t in range(FRAMES_PER_COUPLE):
-            frame = np.zeros((HEIGHT, WIDTH, 4), dtype=np.uint8)
+            frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+            
             # Entrée rapide (0-0.7s)
             if t < FPS*0.7:
                 x1 = int(-200 + (WIDTH//2-120+30)*(t/(FPS*0.7)))
                 x2 = int(WIDTH+200 - (WIDTH//2-120+30)*(t/(FPS*0.7)))
                 y = HEIGHT//2-100
-                frame[y:y+400, x1:x1+400] = avatar1
-                frame[y:y+400, x2:x2+400] = avatar2
+                # Vérifier que les coordonnées sont valides
+                if 0 <= x1 < WIDTH-400 and 0 <= y < HEIGHT-400:
+                    # Convertir RGBA en RGB pour l'affichage
+                    if avatar1.shape[2] == 4:
+                        # Créer un masque alpha
+                        alpha = avatar1[:, :, 3:4] / 255.0
+                        rgb = avatar1[:, :, :3]
+                        # Appliquer l'alpha sur le frame
+                        frame[y:y+400, x1:x1+400] = (1 - alpha) * frame[y:y+400, x1:x1+400] + alpha * rgb
+                    else:
+                        frame[y:y+400, x1:x1+400] = avatar1[:, :, :3]
+                if 0 <= x2 < WIDTH-400 and 0 <= y < HEIGHT-400:
+                    if avatar2.shape[2] == 4:
+                        alpha = avatar2[:, :, 3:4] / 255.0
+                        rgb = avatar2[:, :, :3]
+                        frame[y:y+400, x2:x2+400] = (1 - alpha) * frame[y:y+400, x2:x2+400] + alpha * rgb
+                    else:
+                        frame[y:y+400, x2:x2+400] = avatar2[:, :, :3]
             # Poursuite (0.7-1.5s)
             elif t < FPS*1.5:
                 x1 = int(WIDTH//2-220 + 60*math.sin(t/8))
                 x2 = int(WIDTH//2+20 - 60*math.sin(t/8))
                 y = HEIGHT//2-100
-                frame[y:y+400, x1:x1+400] = avatar1
-                frame[y:y+400, x2:x2+400] = avatar2
+                # Vérifier que les coordonnées sont valides
+                if 0 <= x1 < WIDTH-400 and 0 <= y < HEIGHT-400:
+                    if avatar1.shape[2] == 4:
+                        alpha = avatar1[:, :, 3:4] / 255.0
+                        rgb = avatar1[:, :, :3]
+                        frame[y:y+400, x1:x1+400] = (1 - alpha) * frame[y:y+400, x1:x1+400] + alpha * rgb
+                    else:
+                        frame[y:y+400, x1:x1+400] = avatar1[:, :, :3]
+                if 0 <= x2 < WIDTH-400 and 0 <= y < HEIGHT-400:
+                    if avatar2.shape[2] == 4:
+                        alpha = avatar2[:, :, 3:4] / 255.0
+                        rgb = avatar2[:, :, :3]
+                        frame[y:y+400, x2:x2+400] = (1 - alpha) * frame[y:y+400, x2:x2+400] + alpha * rgb
+                    else:
+                        frame[y:y+400, x2:x2+400] = avatar2[:, :, :3]
             # Collision (1.5-2s)
             elif t < FPS*2:
                 x = WIDTH//2-200
                 y = HEIGHT//2-100
-                frame[y:y+400, x:x+400] = avatar1
-                frame[y:y+400, x+80:x+480] = avatar2
+                # Vérifier que les coordonnées sont valides
+                if 0 <= x < WIDTH-400 and 0 <= y < HEIGHT-400:
+                    if avatar1.shape[2] == 4:
+                        alpha = avatar1[:, :, 3:4] / 255.0
+                        rgb = avatar1[:, :, :3]
+                        frame[y:y+400, x:x+400] = (1 - alpha) * frame[y:y+400, x:x+400] + alpha * rgb
+                    else:
+                        frame[y:y+400, x:x+400] = avatar1[:, :, :3]
+                if 0 <= x+80 < WIDTH-400 and 0 <= y < HEIGHT-400:
+                    if avatar2.shape[2] == 4:
+                        alpha = avatar2[:, :, 3:4] / 255.0
+                        rgb = avatar2[:, :, :3]
+                        frame[y:y+400, x+80:x+480] = (1 - alpha) * frame[y:y+400, x+80:x+480] + alpha * rgb
+                    else:
+                        frame[y:y+400, x+80:x+480] = avatar2[:, :, :3]
                 # Effet BOING
-                cv2.putText(frame, "BOING!", (WIDTH//2-100, HEIGHT//2-120), cv2.FONT_HERSHEY_TRIPLEX, 2, (255,255,0,255), 6)
+                cv2.putText(frame, "BOING!", (WIDTH//2-100, HEIGHT//2-120), cv2.FONT_HERSHEY_TRIPLEX, 2, (255,255,0), 6)
             # Explosion paillettes/nuage (2-2.5s)
             elif t < FPS*2.5:
                 for _ in range(80):
                     px = random.randint(WIDTH//2-80, WIDTH//2+80)
                     py = random.randint(HEIGHT//2-40, HEIGHT//2+120)
-                    color = tuple(np.random.randint(150,255,3).tolist())+(255,)
+                    color = tuple(np.random.randint(150,255,3).tolist())
                     cv2.circle(frame, (px,py), random.randint(8,18), color, -1)
-                cv2.ellipse(frame, (WIDTH//2, HEIGHT//2+100), (120,60), 0, 0, 360, (255,255,255,180), -1)
-                cv2.putText(frame, "POUF!", (WIDTH//2-80, HEIGHT//2-60), cv2.FONT_HERSHEY_TRIPLEX, 2, (255,0,255,255), 6)
+                cv2.ellipse(frame, (WIDTH//2, HEIGHT//2+100), (120,60), 0, 0, 360, (255,255,255), -1)
+                cv2.putText(frame, "POUF!", (WIDTH//2-80, HEIGHT//2-60), cv2.FONT_HERSHEY_TRIPLEX, 2, (255,0,255), 6)
             # Bébé sort du nuage (2.5-4s)
             elif t < FPS*4:
                 alpha = min(1, (t-FPS*2.5)/(FPS*1.5))
                 y = HEIGHT//2-40 + int(80*(1-alpha))
-                frame[ y:y+400, WIDTH//2-200:WIDTH//2+200 ] = baby
-                cv2.ellipse(frame, (WIDTH//2, HEIGHT//2+100), (120,60), 0, 0, 360, (255,255,255,int(180*(1-alpha))), -1)
+                x = WIDTH//2-200
+                # Vérifier que les coordonnées sont valides
+                if 0 <= x < WIDTH-400 and 0 <= y < HEIGHT-400:
+                    if baby.shape[2] == 4:
+                        baby_alpha = baby[:, :, 3:4] / 255.0
+                        baby_rgb = baby[:, :, :3]
+                        frame[y:y+400, x:x+400] = (1 - baby_alpha) * frame[y:y+400, x:x+400] + baby_alpha * baby_rgb
+                    else:
+                        frame[y:y+400, x:x+400] = baby[:, :, :3]
+                cv2.ellipse(frame, (WIDTH//2, HEIGHT//2+100), (120,60), 0, 0, 360, (255,255,255), -1)
                 if alpha>0.7:
-                    cv2.putText(frame, "TCHAK!", (WIDTH//2-100, HEIGHT//2-120), cv2.FONT_HERSHEY_TRIPLEX, 2, (0,255,255,255), 6)
+                    cv2.putText(frame, "TCHAK!", (WIDTH//2-100, HEIGHT//2-120), cv2.FONT_HERSHEY_TRIPLEX, 2, (0,255,255), 6)
             # Pause bébé (4-6s)
             else:
-                frame[ HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200 ] = baby
-                cv2.putText(frame, f"{n1} + {n2}", (WIDTH//2-180, HEIGHT-120), cv2.FONT_HERSHEY_TRIPLEX, 1.2, (255,255,255,255), 3)
-            # Convert RGBA to RGB for video
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_RGBA2RGB)
-            all_frames.append(frame_rgb)
+                y = HEIGHT//2-40
+                x = WIDTH//2-200
+                # Vérifier que les coordonnées sont valides
+                if 0 <= x < WIDTH-400 and 0 <= y < HEIGHT-400:
+                    if baby.shape[2] == 4:
+                        baby_alpha = baby[:, :, 3:4] / 255.0
+                        baby_rgb = baby[:, :, :3]
+                        frame[y:y+400, x:x+400] = (1 - baby_alpha) * frame[y:y+400, x:x+400] + baby_alpha * baby_rgb
+                    else:
+                        frame[y:y+400, x:x+400] = baby[:, :, :3]
+                cv2.putText(frame, f"{n1} + {n2}", (WIDTH//2-180, HEIGHT-120), cv2.FONT_HERSHEY_TRIPLEX, 1.2, (255,255,255), 3)
+            
+            all_frames.append(frame)
     # Affichage final des 5 bébés
     for idx, (child_path, n1, n2) in enumerate(baby_imgs, 1):
         frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-        baby = cv2.cvtColor(cv2.imread(child_path, cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGB)
-        frame[ HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200 ] = baby
+        try:
+            # Charger le bébé avec PIL pour gérer la transparence
+            pil_baby = Image.open(child_path).convert('RGBA')
+            pil_baby = pil_baby.resize((400, 400), Image.Resampling.LANCZOS)
+            baby = np.array(pil_baby)
+            
+            # Appliquer la transparence
+            if baby.shape[2] == 4:
+                alpha = baby[:, :, 3:4] / 255.0
+                rgb = baby[:, :, :3]
+                frame[HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200] = (1 - alpha) * frame[HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200] + alpha * rgb
+            else:
+                frame[HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200] = baby[:, :, :3]
+        except:
+            # Créer un bébé de fallback
+            baby = np.zeros((400, 400, 3), dtype=np.uint8)
+            color_baby = (random.randint(150, 255), random.randint(150, 255), random.randint(150, 255))
+            cv2.circle(baby, (200, 200), 150, color_baby, -1)
+            cv2.putText(baby, "B", (150, 220), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 255, 255), 5)
+            frame[HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200] = baby
         cv2.putText(frame, f"{n1} + {n2}", (WIDTH//2-180, HEIGHT-120), cv2.FONT_HERSHEY_TRIPLEX, 1.2, (255,255,255), 3)
         all_frames.extend([frame]*int(FPS*2))
     # Annonce du plus beau
     winner = random.choice(baby_imgs)
     for t in range(int(FPS*3)):
         frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-        baby = cv2.cvtColor(cv2.imread(winner[0], cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGB)
-        frame[ HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200 ] = baby
+        try:
+            # Charger le bébé gagnant avec PIL
+            pil_baby = Image.open(winner[0]).convert('RGBA')
+            pil_baby = pil_baby.resize((400, 400), Image.Resampling.LANCZOS)
+            baby = np.array(pil_baby)
+            
+            # Appliquer la transparence
+            if baby.shape[2] == 4:
+                alpha = baby[:, :, 3:4] / 255.0
+                rgb = baby[:, :, :3]
+                frame[HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200] = (1 - alpha) * frame[HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200] + alpha * rgb
+            else:
+                frame[HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200] = baby[:, :, :3]
+        except:
+            # Créer un bébé de fallback
+            baby = np.zeros((400, 400, 3), dtype=np.uint8)
+            color_baby = (random.randint(150, 255), random.randint(150, 255), random.randint(150, 255))
+            cv2.circle(baby, (200, 200), 150, color_baby, -1)
+            cv2.putText(baby, "B", (150, 220), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 255, 255), 5)
+            frame[HEIGHT//2-40:HEIGHT//2-40+400, WIDTH//2-200:WIDTH//2+200] = baby
         cv2.putText(frame, f"Le plus beau : {winner[1]} + {winner[2]} !", (WIDTH//2-260, HEIGHT//2+220), cv2.FONT_HERSHEY_TRIPLEX, 1.3, (255,215,0), 4)
         all_frames.append(frame)
     # Export vidéo MP4
-    out = cv2.VideoWriter('cartoon_fusion_tiktok.mp4', cv2.VideoWriter_fourcc(*'mp4v'), FPS, (WIDTH, HEIGHT))
+    cartoon_filename = generate_viral_filename()
+    out = cv2.VideoWriter(cartoon_filename, cv2.VideoWriter_fourcc(*'mp4v'), FPS, (WIDTH, HEIGHT))
     for f in all_frames:
         out.write(f)
     out.release()
-    print("✅ Vidéo cartoon Looney Tunes générée : cartoon_fusion_tiktok.mp4")
+    print(f"✅ Vidéo cartoon Looney Tunes générée : {cartoon_filename}")
 
 # --- Pour activer ce mode, décommente la ligne suivante et commente le render_video() ---
 if __name__ == "__main__":
     cartoon_fusion_video()
     pygame.quit()
+
+def download_image_robust(query, filename):
+    """Télécharge une image avec plusieurs sources et méthodes robustes."""
+    try:
+        print(f"    🔍 Recherche robuste pour: {query}")
+        
+        # 1. Essayer Wikimedia Commons (le plus fiable)
+        if download_wikimedia_image(query, filename):
+            return True
+        
+        # 2. Essayer avec une approche alternative pour Unsplash
+        try:
+            print(f"    📥 Tentative Unsplash alternative...")
+            # Utiliser une URL différente pour Unsplash
+            unsplash_url = f"https://source.unsplash.com/featured/400x400/?{requests.utils.quote(query + ' person face portrait')}"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
+            }
+            
+            response = requests.get(unsplash_url, timeout=15, headers=headers, allow_redirects=True)
+            
+            if response.status_code == 200 and response.headers.get('content-type', '').startswith('image/'):
+                img_data = response.content
+                
+                # Vérifier si c'est une image valide
+                from PIL import Image
+                import io
+                
+                try:
+                    img = Image.open(io.BytesIO(img_data))
+                    img.verify()
+                    img.close()
+                    
+                    # Recharger et traiter l'image
+                    img = Image.open(io.BytesIO(img_data)).convert('RGBA')
+                    img = img.resize((400, 400), Image.Resampling.LANCZOS)
+                    img.save(filename, 'PNG')
+                    print(f"    ✅ Image téléchargée avec succès: {filename}")
+                    return True
+                except Exception as e:
+                    print(f"    ⚠️  Format d'image non reconnu: {e}")
+            else:
+                print(f"    ⚠️  Réponse non-image (status: {response.status_code})")
+                
+        except Exception as e:
+            print(f"    ⚠️  Échec Unsplash: {e}")
+        
+        # 3. Essayer avec une recherche Google Images alternative
+        try:
+            print(f"    📥 Tentative recherche alternative...")
+            # Utiliser une approche différente - essayer de télécharger depuis un service d'images gratuit
+            alternative_url = f"https://picsum.photos/400/400?random={hash(query) % 1000}"
+            
+            response = requests.get(alternative_url, timeout=10, headers=headers)
+            
+            if response.status_code == 200:
+                img_data = response.content
+                
+                try:
+                    img = Image.open(io.BytesIO(img_data))
+                    img.verify()
+                    img.close()
+                    
+                    img = Image.open(io.BytesIO(img_data)).convert('RGBA')
+                    img = img.resize((400, 400), Image.Resampling.LANCZOS)
+                    img.save(filename, 'PNG')
+                    print(f"    ✅ Image alternative téléchargée: {filename}")
+                    return True
+                except Exception as e:
+                    print(f"    ⚠️  Format d'image alternative non reconnu: {e}")
+                    
+        except Exception as e:
+            print(f"    ⚠️  Échec recherche alternative: {e}")
+        
+        return False
+        
+    except Exception as e:
+        print(f"    ❌ Erreur dans download_image_robust: {e}")
+        return False
