@@ -142,6 +142,92 @@ def download_wikimedia_image(query, filename):
             continue
     return False
 
+def download_image_robust(query, filename):
+    """Télécharge une image avec plusieurs sources et méthodes robustes."""
+    try:
+        print(f"    🔍 Recherche robuste pour: {query}")
+
+        # 1. Essayer Wikimedia Commons (le plus fiable)
+        if download_wikimedia_image(query, filename):
+            return True
+
+        # 2. Essayer avec une approche alternative pour Unsplash
+        try:
+            print(f"    📥 Tentative Unsplash alternative...")
+            # Utiliser une URL différente pour Unsplash
+            unsplash_url = f"https://source.unsplash.com/featured/400x400/?{requests.utils.quote(query + ' person face portrait')}"
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
+            }
+
+            response = requests.get(unsplash_url, timeout=15, headers=headers, allow_redirects=True)
+
+            if response.status_code == 200 and response.headers.get('content-type', '').startswith('image/'):
+                img_data = response.content
+
+                # Vérifier si c'est une image valide
+                from PIL import Image
+                import io
+
+                try:
+                    img = Image.open(io.BytesIO(img_data))
+                    img.verify()
+                    img.close()
+
+                    # Recharger et traiter l'image
+                    img = Image.open(io.BytesIO(img_data)).convert('RGBA')
+                    img = img.resize((400, 400), Image.Resampling.LANCZOS)
+                    img.save(filename, 'PNG')
+                    print(f"    ✅ Image téléchargée avec succès: {filename}")
+                    return True
+                except Exception as e:
+                    print(f"    ⚠️  Format d'image non reconnu: {e}")
+            else:
+                print(f"    ⚠️  Réponse non-image (status: {response.status_code})")
+
+        except Exception as e:
+            print(f"    ⚠️  Échec Unsplash: {e}")
+
+        # 3. Essayer avec une recherche Google Images alternative
+        try:
+            print(f"    📥 Tentative recherche alternative...")
+            # Utiliser une approche différente - essayer de télécharger depuis un service d'images gratuit
+            alternative_url = f"https://picsum.photos/400/400?random={hash(query) % 1000}"
+
+            response = requests.get(alternative_url, timeout=10, headers=headers)
+
+            if response.status_code == 200:
+                img_data = response.content
+
+                try:
+                    img = Image.open(io.BytesIO(img_data))
+                    img.verify()
+                    img.close()
+
+                    img = Image.open(io.BytesIO(img_data)).convert('RGBA')
+                    img = img.resize((400, 400), Image.Resampling.LANCZOS)
+                    img.save(filename, 'PNG')
+                    print(f"    ✅ Image alternative téléchargée: {filename}")
+                    return True
+                except Exception as e:
+                    print(f"    ⚠️  Format d'image alternative non reconnu: {e}")
+
+        except Exception as e:
+            print(f"    ⚠️  Échec recherche alternative: {e}")
+
+        return False
+
+    except Exception as e:
+        print(f"    ❌ Erreur dans download_image_robust: {e}")
+        return False
+
 def download_unsplash_image(query, filename):
     """Télécharge une image portrait depuis Unsplash (requête simple, pas besoin de clé)."""
     try:
@@ -1313,89 +1399,3 @@ def cartoon_fusion_video():
 if __name__ == "__main__":
     cartoon_fusion_video()
     pygame.quit()
-
-def download_image_robust(query, filename):
-    """Télécharge une image avec plusieurs sources et méthodes robustes."""
-    try:
-        print(f"    🔍 Recherche robuste pour: {query}")
-        
-        # 1. Essayer Wikimedia Commons (le plus fiable)
-        if download_wikimedia_image(query, filename):
-            return True
-        
-        # 2. Essayer avec une approche alternative pour Unsplash
-        try:
-            print(f"    📥 Tentative Unsplash alternative...")
-            # Utiliser une URL différente pour Unsplash
-            unsplash_url = f"https://source.unsplash.com/featured/400x400/?{requests.utils.quote(query + ' person face portrait')}"
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1'
-            }
-            
-            response = requests.get(unsplash_url, timeout=15, headers=headers, allow_redirects=True)
-            
-            if response.status_code == 200 and response.headers.get('content-type', '').startswith('image/'):
-                img_data = response.content
-                
-                # Vérifier si c'est une image valide
-                from PIL import Image
-                import io
-                
-                try:
-                    img = Image.open(io.BytesIO(img_data))
-                    img.verify()
-                    img.close()
-                    
-                    # Recharger et traiter l'image
-                    img = Image.open(io.BytesIO(img_data)).convert('RGBA')
-                    img = img.resize((400, 400), Image.Resampling.LANCZOS)
-                    img.save(filename, 'PNG')
-                    print(f"    ✅ Image téléchargée avec succès: {filename}")
-                    return True
-                except Exception as e:
-                    print(f"    ⚠️  Format d'image non reconnu: {e}")
-            else:
-                print(f"    ⚠️  Réponse non-image (status: {response.status_code})")
-                
-        except Exception as e:
-            print(f"    ⚠️  Échec Unsplash: {e}")
-        
-        # 3. Essayer avec une recherche Google Images alternative
-        try:
-            print(f"    📥 Tentative recherche alternative...")
-            # Utiliser une approche différente - essayer de télécharger depuis un service d'images gratuit
-            alternative_url = f"https://picsum.photos/400/400?random={hash(query) % 1000}"
-            
-            response = requests.get(alternative_url, timeout=10, headers=headers)
-            
-            if response.status_code == 200:
-                img_data = response.content
-                
-                try:
-                    img = Image.open(io.BytesIO(img_data))
-                    img.verify()
-                    img.close()
-                    
-                    img = Image.open(io.BytesIO(img_data)).convert('RGBA')
-                    img = img.resize((400, 400), Image.Resampling.LANCZOS)
-                    img.save(filename, 'PNG')
-                    print(f"    ✅ Image alternative téléchargée: {filename}")
-                    return True
-                except Exception as e:
-                    print(f"    ⚠️  Format d'image alternative non reconnu: {e}")
-                    
-        except Exception as e:
-            print(f"    ⚠️  Échec recherche alternative: {e}")
-        
-        return False
-        
-    except Exception as e:
-        print(f"    ❌ Erreur dans download_image_robust: {e}")
-        return False
